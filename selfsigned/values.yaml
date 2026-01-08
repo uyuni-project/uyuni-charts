@@ -1,0 +1,35 @@
+# Default credentials, make sure to set them
+credentials:
+  admin:
+    user: admin
+    # password is the password for the product administrator user
+    # password:
+  db:
+    internal:
+      user: susemanager
+      # password is the password for the user of the internal database
+      # password:
+    admin:
+      user: postgres
+      # password is the password for the admin user of postgresql
+      # password: 
+    reportdb:
+      user: pythia
+      # password is the password for the user of the report database
+      # password:
+
+global:
+  # fqdn is the fully qualified name the server will answer as.
+  # Changing this value renames the server and changes the server FQDN in the database, handle with care.
+  # This value is required.
+  fqdn:
+
+ssl:
+  country: "DE"
+  province: "Bayern"
+  locality: "Nurnberg"
+  org: "Example"
+  orgUnit: "Test"
+  email: "admin@example.com"
+
+certManagerNamespace: "cert-manager"
