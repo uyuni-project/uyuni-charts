@@ -38,7 +38,6 @@ spec:
       config:
         hsts: "false"
     tcp:
-      80: uyuni/web:80
       5432: uyuni/reportdb:5432
       4505: uyuni/salt:4505
       4506: uyuni/salt:4506
@@ -49,8 +48,6 @@ spec:
       5557: uyuni/tomcat:5557
       9187: uyuni/db:9187
       9800: uyuni/taskomatic:9800
-      ## Only if installed with server-helm.hubAPI = true
-      # 2830: uyuni/hub-api:2830
       ## Only if installed with server-helm.exposeJavaDebug = true
       # 8001: uyuni/taskomatic:8001
       # 8002: uyuni/search:8002

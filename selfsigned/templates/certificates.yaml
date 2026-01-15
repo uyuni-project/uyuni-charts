@@ -7,7 +7,7 @@
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: uyuni-issuer
+  name: uyuni-root-issuer
   namespace: {{ required "certManagerNamespace is needed!" .Values.certManagerNamespace }}
   labels:
     app.kubernetes.io/part-of: uyuni
@@ -42,7 +42,7 @@ spec:
     size: 256
     rotationPolicy: Always
   issuerRef:
-    name: uyuni-issuer
+    name: uyuni-root-issuer
     kind: Issuer
     group: cert-manager.io
 ---
@@ -84,7 +84,7 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
-  name: uyuni-ca-issuer 
+  name: uyuni-issuer 
   labels:
     app.kubernetes.io/part-of: uyuni
 spec:
@@ -115,7 +115,7 @@ spec:
   dnsNames:
     - {{ required "global.fqdn is required!" .Values.global.fqdn }}
   issuerRef:
-    name: uyuni-ca-issuer
+    name: uyuni-issuer
     kind: ClusterIssuer
     group: cert-manager.io
 ---
@@ -154,6 +154,6 @@ spec:
     - reportdb
     - {{ required "global.fqdn is required!" .Values.global.fqdn }}
   issuerRef:
-    name: uyuni-ca-issuer
+    name: uyuni-issuer
     kind: ClusterIssuer
     group: cert-manager.io
