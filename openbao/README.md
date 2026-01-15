@@ -7,7 +7,7 @@ SPDX-License-Identifier: MIT
 
 # Requirements
 
-Before installing this helm chart, ensure that [cert-manager](https://cert-manager.io/docs/installation/helm/) and 
+Before installing this helm chart, ensure that [cert-manager](https://cert-manager.io/docs/installation/helm/) and
 [trust-manager](https://cert-manager.io/docs/trust/trust-manager/installation/#3-install-trust-manager) are installed in the cluster.
 If they are not installed in the `cert-manager` namespace, set the `certManagerNamespace` value.
 
@@ -23,9 +23,9 @@ The following values need to be set:
 credentials:
   db:
     admin:
-      password: ... 
+      password: ...
     internal:
-      password: ... 
+      password: ...
     reportdb:
       password: ...
   admin:
@@ -49,6 +49,12 @@ The goal of this is to easily play with the helm chart for testing purpose.
 
 ### Prepare the configuration
 
+Create an `openbao-system` namespace to install OpenBao in:
+
+```sh
+kubectl create ns openbao-system
+```
+
 In this setup, OpenBao will also have TLS encrypted communication between the Ingress and the pod.
 This means that it will need certificates.
 Let's create them using cert-manager, apply the following definition after changing the FQDN:
@@ -59,7 +65,7 @@ apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: root-issuer
-  namespace: cert-manager 
+  namespace: cert-manager
 spec:
   selfSigned: {}
 ---
@@ -67,7 +73,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: root-ca
-  namespace: cert-manager 
+  namespace: cert-manager
 spec:
   isCA: true
   subject:
@@ -76,10 +82,10 @@ spec:
     localities: ["Nuernberg"]
     organizations: ["SUSE"]
     organizationalUnits: ["lab"]
-  commonName: {{ FQDN }} 
+  commonName: Root CA
   dnsNames:
-    - {{ FQDN }} 
-  secretName: root-ca 
+    - FQDN
+  secretName: root-ca
   privateKey:
     algorithm: ECDSA
     size: 256
@@ -92,10 +98,28 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
-  name: main-issuer 
+  name: main-issuer
 spec:
   ca:
     secretName: root-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: openbao-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: OpenBao CA
+  issuerRef:
+    kind: ClusterIssuer
+    name: main-issuer
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    rotationPolicy: Always
+    size: 2048
+  secretName: openbao-ca
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -120,8 +144,6 @@ spec:
     size: 2048
   secretName: internal-server-tls
   subject:
-    organizationalUnits:
-    - lab
     organizations:
     - SUSE
 ---
@@ -132,7 +154,7 @@ metadata:
   namespace: openbao-system
 spec:
   dnsNames:
-  - {{ FQDN }}
+  - FQDN
   issuerRef:
     kind: ClusterIssuer
     name: main-issuer
@@ -143,8 +165,6 @@ spec:
     size: 2048
   secretName: public-server-tls
   subject:
-    organizationalUnits:
-    - lab
     organizations:
     - SUSE
 ```
@@ -169,11 +189,11 @@ server:
       nginx.ingress.kubernetes.io/proxy-ssl-secret: "openbao-system/internal-server-tls"
     ingressClassName: "nginx"
     hosts:
-      - host: {{ FQDN }}
+      - host: FQDN
     tls:
       - secretName: public-server-tls
         hosts:
-          - {{ FQDN }}
+          - FQDN
 
   volumes:
     - name: unseal-key
@@ -256,7 +276,7 @@ In the following commands, `bao` needs to be changed to `kubectl exec -ti -n ope
 
 Run these commands on your OpenBao instance before installing:
 
-1. **Enable PKI and Create Role:**
+### Enable PKI and Create Role
 
 Replace `<FQDN>` by the FQDN of the uyuni server.
 ```bash
@@ -268,7 +288,7 @@ Replace `<FQDN>` by the FQDN of the uyuni server.
 
 **The email address configured in the `ssl.email` value needs to be within a subdomain of the FQDN configured here, otherwise the certificate request will be rejected by OpenBao.**
 
-2. **Configure Kubernetes Auth:**
+### Configure Kubernetes Auth
 
 ```bash
 bao auth enable kubernetes
@@ -276,7 +296,7 @@ CLUSTER_URL=`kubectl cluster-info | grep Kubernetes | sed 's/^.*\(http.*\)$/\1/'
 bao write auth/kubernetes/config kubernetes_host="$CLUSTER_URL"
 ```
 
-3. **Create Policy & Bind Role: Create `uyuni-pki-policy.hcl`:**
+### Create Policy & Bind Role: Create `uyuni-pki-policy.hcl`
 
 ```
 path "pki/sign/uyuni-role" { capabilities = ["update"] }
@@ -286,14 +306,14 @@ path "pki/cert/ca" { capabilities = ["read"] }
 Apply it (replace the `<cert-manager-namespace>` by the namespace where cert-manager is installed)
 
 ```bash
-bao policy write uyuni-pki-policy uyuni-pki-policy.hcl
+cat uyuni-pki-policy.hcl | bao policy write uyuni-pki-policy -
 bao write auth/kubernetes/role/uyuni-issuer-role \
     bound_service_account_names=openbao-issuer-sa \
     bound_service_account_namespaces=<cert-manager-namespace> \
     token_policies=uyuni-pki-policy
 ```
 
-4. Allow unauthenticated access to the CA certificate
+### Allow unauthenticated access to the CA certificate
 
 To support the `openbao-ca-fetcher`, OpenBao must allow the public (unauthenticated) reading of the CA certificate, or you must explicitly grant `uyuni-issuer-role` permission to read it.
 
@@ -308,17 +328,51 @@ bao write pki/config/urls \
     crl_distribution_points="https://<FQDN>/v1/pki/crl"
 ```
 
-5. **Generate or upload a root CA certificate to use to generate the Uyuni certificates:**
+### Generate or upload a root CA certificate to use to generate the Uyuni certificates
 
-A root CA will be needed by OpenBao to generate the Uyuni certificates.
-In this example a [self-signed](https://openbao.org/api-docs/secret/pki/#generate-root) one is created, but refer to the [PKI documentation](https://openbao.org/api-docs/secret/pki/#import-ca-certificates-and-keys) for more information.
+A CA will be needed by OpenBao to generate the Uyuni certificates.
+In this example an intermediate CSR is generated by OpenBao, signed by the root CA managed by cert-manager and the signed certificate is uploaded back to OpenBao.
+There are other ways to get a CA on OpenBao, but an intermediate CA on OpenBao is safer.
+
+Generate the CSR:
 
 ```sh
-bao write pki/root/generate/internal \
-             common_name="My Root CA" \
-             issuer_name="root-2026" \
-             ttl=87600h
+bao write -format=json pki/intermediate/generate/internal \
+             common_name="OpenBao Intermediate CA" \
+             ttl=43800h | jq -r '.data.csr' > openbao.csr
 ```
+
+Create a YAML file for the cert-manager certificate request.
+This file will be named `openbao-csr.yaml` and the result of `base64 -w0 openbao.csr` needs to be set in `spec.request`:
+
+```yaml
+apiVersion: cert-manager.io/v1
+kind: CertificateRequest
+metadata:
+  name: openbao-intermediate-request
+  namespace: cert-manager
+spec:
+  request: <BASE64_ENCODED_CSR_ON_ONE_LINE>
+  isCA: true
+  usages:
+    - key encipherment
+    - content commitment
+    - digital signature
+    - cert sign
+    - crl sign
+  issuerRef:
+    name: main-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+```
+
+Get the signed certificate and upload it to OpenBao:
+
+```sh
+kubectl apply -f openbao-csr.yaml
+kubectl get cr -n cert-manager openbao-intermediate-request -o "jsonpath={.status.certificate}" | base64 -d >openbao.crt
+```
+
 
 ## cert-manager RBAC
 
@@ -327,7 +381,7 @@ This helm chart will add the necessary service account and add the cluster role 
 
 # Uninstalling
 
-**Uninstalling OpenBao doesn't removee persistent volume and its claim, they need to be manually deleted.**
+**Uninstalling OpenBao doesn't remove the persistent volume and its claim, they need to be manually deleted.**
 
 By default, `cert-manager` does not remove the created secrets.
 In such a case, delete them after uninstalling the helm chart:
@@ -335,5 +389,4 @@ In such a case, delete them after uninstalling the helm chart:
 ```
 kubectl delete secrets -n cert-manager uyuni-ca
 kubectl delete secrets -n <uyuni-namspace> db-cert uyuni-cert
-
 ```
