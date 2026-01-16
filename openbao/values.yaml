@@ -48,6 +48,10 @@ openbao:
   roleName: "uyuni-issuer-role"
   pkiPath: "pki/sign/uyuni-role"
 
+# rootCA is the name of the secret containing the root CA certificate in the ca.crt.
+# The secret needs to be in the cert-manager namespace for trust-manager to find it.
+rootCA: "root-ca"
+
 certManagerNamespace: "cert-manager"
 
 # All the server helm chart values can be passed under this property

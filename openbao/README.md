@@ -38,6 +38,9 @@ server-helm:
   # All the values for server-helm should follow
 ```
 
+The root CA certificate is expected to be stored in the `ca.crt` value of a secret in the cert-manager namespace.
+By default, the `root-ca` secret will be looked for, but another name can be set using the `rootCA` value.
+
 # OpenBao setup
 
 ## Test lab installation
