@@ -42,10 +42,13 @@ openbao:
   # address is the URL of the openbao server, for example: "https://openbao.default.svc.cluster.local:8200"
   address:
   # caSecret can be used to point to a secret holding the root CA for the openbao in the namespace where cert-manager is installed.
-  #caSecret:
-  #  name:
-  #  key: ca.crt
-  roleName: "uyuni-issuer-role"
+  caSecret:
+    name: root-ca
+    key: ca.crt
+  auth:
+    # mountPath is appended after "/v1/auth/" in the authentication mount path
+    mountPath: "kubernetes/uyuni-server-cluster"
+    roleName: "uyuni-issuer-role"
   pkiPath: "pki/sign/uyuni-role"
 
 # rootCA is the name of the secret containing the root CA certificate in the ca.crt.
