@@ -1,0 +1,79 @@
+# SPDX-FileCopyrightText: 2026 SUSE LLC
+# SPDX-FileContributor: Cédric Bosdonnat
+#
+# SPDX-License-Identifier: MIT
+
+# ClusterIssuer using OpenBao Kubernetes Auth
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: "uyuni-openbao-issuer"
+  labels:
+    app.kubernetes.io/part-of: uyuni
+spec:
+  vault:
+    # URL to your OpenBao service in the cluster
+    server: {{ .Values.openbao.address | required "openbao.address is required" }}
+    # The path where you enabled the PKI engine
+    path: {{ .Values.openbao.pkiPath | default "pki/sign/uyuni-role" }}
+{{- if .Values.rootCASecret }}
+    caBundleSecretRef:
+      name: {{ .Values.rootCASecret.name }}
+      key: {{ default .Values.rootCASecret.key "ca.crt" }}
+{{- end }}
+    auth:
+      kubernetes:
+        # The role name you created in OpenBao (auth/kubernetes/role/...)
+        role: {{ .Values.openbao.auth.roleName | default "uyuni-issuer-role" }}
+        mountPath: /v1/auth/{{ .Values.openbao.auth.mountPath | default "kubernetes" }}
+        serviceAccountRef:
+          name: openbao-issuer-sa
+---
+# trust-manager bundle to create an uyuni-ca configmap from the root-ca secret fetched from openbao
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: uyuni-ca
+  labels:
+    app.kubernetes.io/part-of: uyuni
+spec:
+  sources:
+    - secret:
+        name: {{ .Values.rootCASecret.name }}
+        key: {{ .Values.rootCASecret.key }}
+  target:
+    configMap:
+      key: "ca.crt"
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Release.Namespace | quote }}
+---
+{{- $config := .Values.global.config | fromYaml }}
+# Certificate for apache
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: proxy-cert
+  namespace: "{{ .Release.Namespace }}"
+  labels:
+    app.kubernetes.io/part-of: uyuni
+spec:
+  secretName: proxy-cert
+  secretTemplate:
+    labels:
+      app.kubernetes.io/part-of: uyuni
+  isCA: false
+  usages:
+  - server auth
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+    rotationPolicy: Always
+  dnsNames:
+    - {{ required "proxy_fqdn is required in global.config!" $config.proxy_fqdn }}
+  commonName: {{ required "proxy_fqdn is required in global.config!" $config.proxy_fqdn }}
+  issuerRef:
+    name: "uyuni-openbao-issuer"
+    kind: ClusterIssuer
+    group: cert-manager.io

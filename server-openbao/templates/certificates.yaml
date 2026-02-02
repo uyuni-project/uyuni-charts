@@ -116,7 +116,6 @@ spec:
     localities: [{{ .Values.ssl.locality }}]
     organizations: [{{ .Values.ssl.org }}]
     organizationalUnits: [{{ .Values.ssl.orgUnit }}]
-  commonName: reportdb-{{ required "global.fqdn is required!" .Values.global.fqdn }}
   emailAddresses: 
     - {{ .Values.ssl.email }}
   privateKey:
