@@ -88,6 +88,7 @@ spec:
   commonName: Root CA
   dnsNames:
     - FQDN
+  duration: 518400h # 1 year
   secretName: root-ca
   privateKey:
     algorithm: ECDSA
@@ -218,6 +219,14 @@ server:
   standalone:
     enabled: true
     config: |
+      audit "file" "to-stdout" {
+        description = "This audit device should never fail."
+        options {
+          file_path = "/dev/stdout"
+          log_raw = "true"
+        }
+      }
+
       listener "tcp" {
         address = "[::]:8200"
         cluster_address = "[::]:8201"
@@ -275,63 +284,73 @@ Enter the previously saved root token.
 
 ## OpenBao Configuration
 
-In the following commands, `bao` needs to be changed to `kubectl exec -ti -n openbao-system openbao-0 -- bao` if OpenBao has been installed in the same Kubernetes cluster as the one we are installing Uyuni to.
+In the following commands, `$BAO` needs to be changed to `kubectl exec -ti -n openbao-system openbao-0 -- bao` if OpenBao has been installed in the same Kubernetes cluster as the one we are installing Uyuni to.
+This assumes, that the bao client is already logged in.
 
 Run these commands on your OpenBao instance before installing:
 
 ### Enable PKI and Create Role
 
-Replace `<FQDN>` by the FQDN of the uyuni server.
+Set `$DOMAIN` to the domain name for the uyuni server and all its proxies.
+
 ```bash
-   bao secrets enable pki
-   bao write pki/roles/uyuni-role allowed_domains="<FQDN>,db,reportdb" allow_bare_domains=true allow_subdomains=true max_ttl="720h"
+   $BAO secrets enable pki
+   $BAO write pki/roles/uyuni-role allowed_domains="$DOMAIN,db,reportdb" allow_bare_domains=true require_cn=false allow_subdomains=true max_ttl="720h"
 ```
 
-*Note that the `db` and `reportdb` bare domains are required to generate the database TLS certificate.*
+*Note that the `db` and `reportdb` bare domains are required to generate the database TLS certificate.*
 
 **The email address configured in the `ssl.email` value needs to be within a subdomain of the FQDN configured here, otherwise the certificate request will be rejected by OpenBao.**
 
 ### Configure Kubernetes Auth
 
+**Note:** this example implements the Kubernetes authentication, but there are other possible with openbao and cert-manager.
+See the possible ones in the [issuer documentation](https://cert-manager.io/docs/configuration/vault/#authenticating).
+If another authentication is needed, modify the `uyuni-openbao-issuer` definition in the `templates/certificates.yaml` file.
+
+Each Kubernetes cluster needs it own authentication path in OpenBao.
+In the following commands change `CLUSTER_PATH` to be unique on the OpenBao server.
+
+**Important:** the `CLUSTER_PATH` value needs to be set in the `openbao.auth.mountPath` value.
+
 ```bash
-bao auth enable kubernetes
+CLUSTER_PATH=kubernetes/uyuni-server-cluster
+$BAO auth enable -path $CLUSTER_PATH kubernetes
 CLUSTER_URL=`kubectl cluster-info | grep Kubernetes | sed 's/^.*\(http.*\)$/\1/'`
-bao write auth/kubernetes/config kubernetes_host="$CLUSTER_URL"
+$BAO write auth/$CLUSTER_PATH/config kubernetes_host="$CLUSTER_URL"
 ```
 
 ### Create Policy & Bind Role: Create `uyuni-pki-policy.hcl`
 
 ```
-path "pki/sign/uyuni-role" { capabilities = ["update"] }
-path "pki/cert/ca" { capabilities = ["read"] }
+path "pki/sign/uyuni-role" { capabilities = ["create", "update"] }
+path "pki/*" { capabilities = ["read", "list"] }
 ```
 
-Apply it (replace the `<cert-manager-namespace>` by the namespace where cert-manager is installed)
+Replace the `ISSUER_ROLE` with the value used for the server configuration if different from the default and run the following commands to apply the policy.
+Also remember to reflect the `ISSUER_ROLE` value in the `openbao.auth.roleName` value.
+
+`CERT_MANAGER_NAMESPACE` needs to be set to the namespace where cert-manager is installed.
 
 ```bash
-cat uyuni-pki-policy.hcl | bao policy write uyuni-pki-policy -
-bao write auth/kubernetes/role/uyuni-issuer-role \
-    bound_service_account_names=openbao-issuer-sa \
-    bound_service_account_namespaces=<cert-manager-namespace> \
-    token_policies=uyuni-pki-policy
+ISSUER_ROLE=uyuni-issuer-role
+CERT_MANAGER_NAMESPACE=cert-manager
+cat uyuni-pki-policy.hcl | $BAO policy write uyuni-pki-policy -
+$BAO write auth/$CLUSTER_PATH/role/$ISSUER_ROLE \
+     bound_service_account_names=openbao-issuer-sa \
+     bound_service_account_namespaces=$CERT_MANAGER_NAMESPACE \
+     token_policies=uyuni-pki-policy
 ```
 
-### Allow unauthenticated access to the CA certificate
+### The root CA
 
-To support the `openbao-ca-fetcher`, OpenBao must allow the public (unauthenticated) reading of the CA certificate, or you must explicitly grant `uyuni-issuer-role` permission to read it.
+This helm chart assumes the root-ca is in a `root-ca` secret in the `cert-manager` namespace.
+If this is not the case, adjust the values for trust-manager to pack it in config maps for Uyuni to use it.
 
-Run these commands on your OpenBao instance after changing the FQDN with the one from the openbao server.
-The port may be needed depending on your setup.
+**Note** that uploading the root CA to OpenBao would not prevent from installing it on the other clusters: the OpenBao issuer would need it to login and get the root CA certificate.
+This is the chicken and egg problem.
 
-In the case of the test installation, I assumed the public FQDN is used, so there is no need of the port since it's hidden by the ingress rule.
-
-```bash
-bao write pki/config/urls \
-    issuing_certificates="https://<FQDN>/v1/pki/ca" \
-    crl_distribution_points="https://<FQDN>/v1/pki/crl"
-```
-
-### Generate or upload a root CA certificate to use to generate the Uyuni certificates
+### Generate the intermediate CA for OpenBao
 
 A CA will be needed by OpenBao to generate the Uyuni certificates.
 In this example an intermediate CSR is generated by OpenBao, signed by the root CA managed by cert-manager and the signed certificate is uploaded back to OpenBao.
@@ -340,7 +359,7 @@ There are other ways to get a CA on OpenBao, but an intermediate CA on OpenBao i
 Generate the CSR:
 
 ```sh
-bao write -format=json pki/intermediate/generate/internal \
+$BAO write -format=json pki/intermediate/generate/internal \
              common_name="OpenBao Intermediate CA" \
              ttl=43800h | jq -r '.data.csr' > openbao.csr
 ```
@@ -374,6 +393,10 @@ Get the signed certificate and upload it to OpenBao:
 ```sh
 kubectl apply -f openbao-csr.yaml
 kubectl get cr -n cert-manager openbao-intermediate-request -o "jsonpath={.status.certificate}" | base64 -d >openbao.crt
+$BAO write pki/config/urls \
+             issuing_certificates="https://$OPENBAO_FQDN/v1/pki/ca" \
+             crl_distribution_points="https://$OPENBAO_FQDN/v1/pki/crl"
+cat openbao.crt | $BAO write pki/intermediate/set-signed certificate=-
 ```
 
 

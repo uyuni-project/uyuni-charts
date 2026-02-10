@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: 2026 SUSE LLC
+# SPDX-FileContributor: Cédric Bosdonnat
+#
+# SPDX-License-Identifier: MIT
+
+# Dedicated ServiceAccount for the OpenBao Issuer to use
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openbao-issuer-sa
+  namespace: {{ .Values.certManagerNamespace }}
+  labels:
+    app.kubernetes.io/part-of: uyuni
+---
+# Fix for "forbidden: User ... cannot create resource 'serviceaccounts/token'"
+# Without this the ServiceAccount for uyuni-openbao-issuer wouldn't get its token.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cert-manager-token-requester
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cert-manager-token-requester-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cert-manager-token-requester
+subjects:
+  - kind: ServiceAccount
+    name: cert-manager
+    namespace: {{ .Values.certManagerNamespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: openbao-auth-delegator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: openbao-issuer-sa
+    namespace: {{ .Values.certManagerNamespace }}
+---
+# Long lived token to pass to openbao
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openbao-reviewer-token
+  namespace: {{ .Values.certManagerNamespace }}
+  annotations:
+    kubernetes.io/service-account.name: openbao-issuer-sa
+type: kubernetes.io/service-account-token
