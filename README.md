@@ -55,8 +55,6 @@ spec:
       # 8001: uyuni/taskomatic:8001
       # 8002: uyuni/search:8002
       # 8003: uyuni/tomcat:8003
-    udp:
-      69: uyuni/tftp:69
 ```
 
 ### Uyuni proxy configuration
@@ -76,8 +74,6 @@ spec:
       4505: uyuni/salt:4505
       4506: uyuni/salt:4506
       8022: uyuni/ssh:8022
-    udp:
-      69: uyuni/tftp:69
 ```
 
 ## Traefik on RKE2
@@ -135,11 +131,4 @@ spec:
         protocol: TCP
         hostPort: 4506
         containerPort: 4506
-      tftp:
-        port: 69
-        expose:
-          default: true
-        exposedPort: 69
-        protocol: UDP
-        hostPort: 69
 ```
