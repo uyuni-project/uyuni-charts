@@ -186,12 +186,6 @@ server:
 
   ingress:
     enabled: true
-    annotations:
-      nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
-      nginx.ingress.kubernetes.io/proxy-ssl-verify: "on"
-      nginx.ingress.kubernetes.io/proxy-ssl-name: "openbao-internal"
-      nginx.ingress.kubernetes.io/proxy-ssl-secret: "openbao-system/internal-server-tls"
-    ingressClassName: "nginx"
     hosts:
       - host: FQDN
     tls:
@@ -222,7 +216,7 @@ server:
       audit "file" "to-stdout" {
         description = "This audit device should never fail."
         options {
-          file_path = "/dev/stdout"
+          file_path = "stdout"
           log_raw = "true"
         }
       }
@@ -246,6 +240,65 @@ server:
       }
 ```
 
+OpenBao needs different ingress configuration depending on the ingress controller.
+
+#### nginx configuration
+
+Create an `openbao-ingress.yaml` file with the following content:
+
+```yaml
+server:
+  ingress:
+    enabled: true
+    annotations:
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+      nginx.ingress.kubernetes.io/proxy-ssl-verify: "on"
+      nginx.ingress.kubernetes.io/proxy-ssl-name: "openbao-internal"
+      nginx.ingress.kubernetes.io/proxy-ssl-secret: "openbao-system/internal-server-tls"
+    ingressClassName: "nginx"
+
+```
+
+#### Traefik configuration
+
+Traefik requires a `ServersTransport` resource to encrypt the communication with the OpenBao pod.
+Create and apply the following resource:
+
+```yaml
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: openbao-backend-transport
+  namespace: openbao-system
+spec:
+  serverName: openbao-internal
+  insecureSkipVerify: true
+  rootCAs:
+    - secret: internal-server-tls
+```
+
+The OpenBao ingress and service need to be annotated too.
+Create an `openbao-ingress.yaml` file with the following content:
+
+```yaml
+server:
+  service:
+    annotations:
+      # Backend (Pod) Security: Re-encryption logic
+      traefik.ingress.kubernetes.io/service.serversscheme: "https"
+      traefik.ingress.kubernetes.io/service.serverstransport: "openbao-system-openbao-backend-transport@kubernetescrd"
+
+  ingress:
+    enabled: true
+    annotations:
+      # Entrypoints and TLS Activation
+      traefik.ingress.kubernetes.io/router.tls: "true"
+      traefik.ingress.kubernetes.io/router.entrypoints: "websecure,web"
+    ingressClassName: "traefik"
+```
+
+#### Unseal key preparation
+
 For the static unseal, a secret needs to be generated.
 Run the following commands:
 
@@ -261,7 +314,7 @@ Keep this key safe: without it, the data are lost.
 Now install the OpenBao helm chart:
 
 ```sh
-helm install -n openbao-system openbao --repo https://openbao.github.io/openbao-helm openbao -f openbao-values.yaml
+helm install -n openbao-system openbao --repo https://openbao.github.io/openbao-helm openbao -f openbao-values.yaml -f openbao-ingress.yaml
 ```
 
 For the first run, the OpenBao server needs to be initialized.
