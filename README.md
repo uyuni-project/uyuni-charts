@@ -19,62 +19,8 @@ Obviously the server prefixed by `server-` deploy the server, while the ones pre
 For Uyuni to work, non-HTTP ports of the containers need to be routed to the outside of the cluster.
 There are several ways to achieve this, and the solutions listed here won't be exhaustive.
 
-## Nginx on RKE2
-
-RKE2 comes with nginx ingress controller by default.
-Nginx can route non HTTP ports, but a configuration file must be added on each node to set it up.
-
-Drop an `uyuni-nginx.yaml` file with such a content in `/var/lib/rancher/rke2/server/manifests/`.
-Note that `uyuni` needs to be replaced by the namespace where the helm chart will be deployed to.
-
-### Uyuni server configuration
-
-```yaml
-apiVersion: helm.cattle.io/v1
-kind: HelmChartConfig
-metadata:
-  name: rke2-ingress-nginx
-  namespace: kube-system
-spec:
-  valuesContent: |-
-    controller:
-      config:
-        hsts: "false"
-    tcp:
-      5432: uyuni/reportdb:5432
-      4505: uyuni/salt:4505
-      4506: uyuni/salt:4506
-      25151: uyuni/cobbler:25151
-      9100: uyuni/tomcat:9100
-      # Comment if installed with server-helm.enableMonitoring = false
-      5556: uyuni/taskomatic:5556
-      5557: uyuni/tomcat:5557
-      9187: uyuni/db:9187
-      9800: uyuni/taskomatic:9800
-      ## Only if installed with server-helm.exposeJavaDebug = true
-      # 8001: uyuni/taskomatic:8001
-      # 8002: uyuni/search:8002
-      # 8003: uyuni/tomcat:8003
-```
-
-### Uyuni proxy configuration
-
-```yaml
-apiVersion: helm.cattle.io/v1
-kind: HelmChartConfig
-metadata:
-  name: rke2-ingress-nginx
-  namespace: kube-system
-spec:
-  valuesContent: |-
-    controller:
-      config:
-        hsts: "false"
-    tcp:
-      4505: uyuni/salt:4505
-      4506: uyuni/salt:4506
-      8022: uyuni/ssh:8022
-```
+**Kubernetes's Nginx ingress controller is now deprecated.
+Even though installing Uyuni on it may work, configuration for it is no longer provided.**
 
 ## Traefik on RKE2
 
@@ -95,6 +41,92 @@ Drop a `/var/lib/rancher/rke2/server/manifests/uyuni-traefik.yaml` file with con
 Remove the `hostPort` lines if using a load balancer.
 
 ### Uyuni server configuration
+
+```yaml
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: rke2-traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    ports:
+      reportdb-pgsql:
+        port: 5432
+        expose:
+          default: true
+        exposedPort: 5432
+        protocol: TCP
+        hostPort: 5432
+        containerPort: 5432
+      salt-publish:
+        port: 4505
+        expose:
+          default: true
+        exposedPort: 4505
+        protocol: TCP
+        hostPort: 4505
+        containerPort: 4505
+      salt-request:
+        port: 4506
+        expose:
+          default: true
+        exposedPort: 4506
+        protocol: TCP
+        hostPort: 4506
+        containerPort: 4506
+      cobbler:
+        port: 25151
+        expose:
+          default:true
+        exposedPort: 25151
+        protocol: TCP
+        hostPort: 25151
+      node-xport:
+        port: 9101
+        expose:
+          default: true
+        exposedPort: 9101
+        protocol: TCP
+        hostPort: 9101
+      # Only if monitoring is enabled
+      db-xport:
+        port: 9187
+        expose:
+          default: true
+        exposedPort: 9187
+        protocol: TCP
+        hostPort: 9187
+      tasko-mtrx:
+        port: 9800
+        expose:
+          default: true
+        exposedPort: 9800
+        protocol: TCP
+        hostPort: 9800
+      # Only if java debugging is enabled
+      tasko-debug:
+        port: 8001
+        expose:
+          default: true
+        exposedPort: 8001
+        protocol: TCP
+        hostPort: 8001
+      search-debug:
+        port: 8002
+        expose:
+          default: true
+        exposedPort: 8002
+        protocol: TCP
+        hostPort: 8002
+      tomcat-debug:
+        port: 8003
+        expose:
+          default: true
+        exposedPort: 8003
+        protocol: TCP
+        hostPort: 8003
+```
 
 ### Uyuni proxy configuration
 

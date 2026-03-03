@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2023-2024 SUSE LLC
+#
+# SPDX-License-Identifier: MIT
+version = 1
+SPDX-PackageName = "uyuni-charts"
+SPDX-PackageSupplier = "Uyuni Project <>"
+SPDX-PackageDownloadLocation = "https://github.com/uyuni-project/uyuni-charts"
+
+[[annotations]]
+path = ["*/templates/NOTES.txt"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 SUSE LLC"
+SPDX-License-Identifier = "MIT"
