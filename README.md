@@ -51,14 +51,6 @@ metadata:
 spec:
   valuesContent: |-
     ports:
-      reportdb-pgsql:
-        port: 5432
-        expose:
-          default: true
-        exposedPort: 5432
-        protocol: TCP
-        hostPort: 5432
-        containerPort: 5432
       salt-publish:
         port: 4505
         expose:
@@ -98,6 +90,10 @@ spec:
         protocol: TCP
         hostPort: 8003
 ```
+
+The report database is not routed through Traefik: the TCP proxy would hide the client IP from PostgreSQL and break the `pg_hba.conf` rules.
+To access the report database from outside the cluster, set `services.reportdb.type` in the server-helm values to `NodePort` (default port `30032`)
+or to `LoadBalancer` (the service then uses `externalTrafficPolicy: Local`).
 
 ### Uyuni proxy configuration
 
